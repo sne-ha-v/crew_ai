@@ -21,7 +21,7 @@ FAANG = ["AAPL", "AMZN", "META", "GOOGL", "NFLX"]
 # Function to fetch stock data
 def fetch_stock_data(ticker):
     stock = yf.Ticker(ticker)
-    hist = stock.history(period="3mo")  # Get last 3 months of stock data
+    hist = stock.history(period="3mo")  # Get last  3 months of stock data
     latest_price = stock.history(period="1d")["Close"].iloc[-1]
     pe_ratio = stock.info.get("trailingPE", "N/A")
 
