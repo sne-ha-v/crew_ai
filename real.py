@@ -102,18 +102,18 @@ def fetch_stock_data(ticker):
 
 # ARIMA Forecasting Function
 def forecast_arima(stock_data, steps=5):
-    # Fit ARIMA model on closing price data (use stock_data['Close'] for the historical prices)
     model = ARIMA(stock_data['Close'], order=(5, 1, 0))  # Adjust order as needed
     model_fit = model.fit()
 
     # Forecast the next 'steps' values
     forecast = model_fit.forecast(steps=steps)
     
-    return forecast
+    return forecast, model_fit.resid  # Return residuals for LSTM training
 
+# Prepare LSTM model
 def create_lstm_model(input_shape):
     model = tf.keras.Sequential([
-        tf.keras.layers.Input(shape=input_shape),  # Recommended input specification
+        tf.keras.layers.Input(shape=input_shape),
         tf.keras.layers.LSTM(50, return_sequences=True),
         tf.keras.layers.LSTM(50, return_sequences=False),
         tf.keras.layers.Dense(1)
@@ -121,110 +121,115 @@ def create_lstm_model(input_shape):
     model.compile(optimizer='adam', loss='mean_squared_error')
     return model
 
-def prepare_lstm_data(stock_data, lookback=60):
-    # Min-max scaling with robust handling
-    scaler = MinMaxScaler(feature_range=(0, 1))
-    scaled_data = scaler.fit_transform(stock_data['Close'].values.reshape(-1, 1))
-    
+# Prepare LSTM Data using ARIMA residuals
+def prepare_lstm_data(residuals, lookback=60):
+    scaler = MinMaxScaler(feature_range=(-1, 1))  # Scaling residuals
+    scaled_data = scaler.fit_transform(residuals.values.reshape(-1, 1))
+
     X, y = [], []
     for i in range(lookback, len(scaled_data)):
         X.append(scaled_data[i-lookback:i, 0])
         y.append(scaled_data[i, 0])
-    
+
     X, y = np.array(X), np.array(y)
     X = np.reshape(X, (X.shape[0], X.shape[1], 1))
-    
+
     return X, y, scaler
 
-def predict_lstm(stock_data, model, scaler):
-    # Prepare data and make predictions
-    X, _, _ = prepare_lstm_data(stock_data)
-    predicted_stock_price = model.predict(X)
+# Hybrid ARIMA-LSTM Forecasting
+def hybrid_forecast(stock_data, lstm_model, lookback=60, steps=5):
+    arima_forecast, residuals = forecast_arima(stock_data, steps)
     
-    # Inverse transform to get actual values
-    predicted_stock_price = scaler.inverse_transform(predicted_stock_price)
-    return predicted_stock_price
+    # Prepare LSTM data using residuals
+    X_lstm, y_lstm, scaler = prepare_lstm_data(residuals, lookback)
+
+    # Train LSTM on residuals
+    lstm_model.fit(X_lstm, y_lstm, epochs=10, batch_size=16, verbose=1)
+
+    # Predict residuals for the next 'steps' time points
+    predicted_residuals = lstm_model.predict(X_lstm[-steps:])
+    predicted_residuals = scaler.inverse_transform(predicted_residuals)
+
+    # Final forecast = ARIMA forecast + predicted residuals
+    final_forecast = arima_forecast + predicted_residuals.flatten()
+
+    return final_forecast
 
 # Define CrewAI agents
+data_scientist = Agent(
+    role="Data Scientist", 
+    goal="Prepare and preprocess data for forecasting models like ARIMA and LSTM.",
+    backstory="Expert in data preprocessing, feature engineering, and training machine learning models.",
+    verbose=True
+)
+
 market_analyst = Agent(
-    role="FINRA Approved Analyst",
+    role="FINRA Approved Analyst", 
     goal="Analyze FAANG stock trends, AI news sentiment, and historical lag analysis.",
     backstory="Expert in financial markets, specializing in stock trends and AI-driven market insights.",
     verbose=True
 )
 
 investment_consultant = Agent(
-    role="Investment Advisor",
+    role="Investment Advisor", 
     goal="Evaluate FAANG stock performance, AI developments, forecasting models, and recommend top investments.",
     backstory="Professional investment consultant leveraging AI, financial market trends, and advanced forecasting techniques like ARIMA and LSTM.",
     verbose=True
 )
 
-data_scientist = Agent(
-    role="Data Scientist",
-    goal="Prepare and preprocess data for forecasting models like ARIMA and LSTM.",
-    backstory="Expert in data preprocessing, feature engineering, and training machine learning models.",
-    verbose=True
-)
-
 stock_forecaster = Agent(
-    role="Stock Forecaster",
+    role="Stock Forecaster", 
     goal="Use ARIMA and LSTM models to predict future stock prices for FAANG companies.",
     backstory="Specialist in stock price prediction using statistical models and deep learning techniques.",
     verbose=True
 )
 
-# Define tasks
+# Define tasks with logical dependencies
 task1 = Task(
-    description="Fetch real-time stock data for FAANG stocks, including Lag-1 analysis and key financial metrics.",
-    agent=market_analyst,
-    expected_output="A summary of FAANG stock prices, P/E ratios, Lag-1 changes, and trading volumes."
+    description="Prepare and preprocess historical stock data for ARIMA and LSTM forecasting models.",
+    agent=data_scientist,
+    expected_output="Preprocessed data ready for forecasting with ARIMA and LSTM models, including cleaned historical price data, normalized features, and train-test splits."
 )
 
 task2 = Task(
-    description="Analyze AI-related news sentiment for each FAANG company and compare it with stock trends over 3 years.",
+    description="Fetch real-time stock data for FAANG stocks, including Lag-1 analysis and key financial metrics.",
     agent=market_analyst,
-    expected_output="A company-wise comparison of AI news sentiment and stock performance with historical trends."
+    expected_output="A comprehensive summary of FAANG stock prices, P/E ratios, Lag-1 changes, trading volumes, and recent market conditions."
 )
 
 task3 = Task(
-    description="""
-    Generate a comprehensive investment recommendation based on:
+    description="Analyze AI-related news sentiment for each FAANG company and compare it with stock trends over 3 years.",
+    agent=market_analyst,
+    expected_output="A detailed company-wise comparison of AI news sentiment, including sentiment scores, correlation with stock performance, and key trend analysis."
+)
+
+task5 = Task(
+    description="Generate ARIMA and LSTM forecasting models for each FAANG stock using preprocessed data.",
+    agent=stock_forecaster,
+    expected_output="Detailed forecasting reports for each FAANG stock, including model performance metrics, predicted price ranges, and confidence intervals."
+)
+
+task4 = Task(
+    description="""Generate a comprehensive investment recommendation based on:
     1. FAANG stock current data
     2. AI news sentiment analysis
     3. Lag-1 trends
     4. ARIMA and LSTM forecasting predictions
     
-    Provide a detailed analysis comparing forecasting model predictions, 
-    sentiment scores, and current market conditions to identify 
-    the most promising FAANG stock for Q1 2025.
-    """,
+    Provide a detailed analysis comparing forecasting model predictions, sentiment scores, and current market conditions to identify the most promising FAANG stock for Q1 2025.""",
     agent=investment_consultant,
-    expected_output="""
-    Detailed investment report including:
-    - Forecasting model predictions for each FAANG stock
-    - Comparative analysis of ARIMA and LSTM predictions
-    - Sentiment-driven insights
-    - Recommended top investment with justification
-    """
-)
-
-task4 = Task(
-    description="Prepare and preprocess historical stock data for ARIMA and LSTM forecasting models.",
-    agent=data_scientist,
-    expected_output="Preprocessed data ready for forecasting with ARIMA and LSTM models."
-)
-
-task5 = Task(
-    description="Generate ARIMA and LSTM forecasting models for each FAANG stock.",
-    agent=stock_forecaster,
-    expected_output="ARIMA and LSTM predictions for each FAANG stock."
+    expected_output="""A comprehensive investment recommendation for FAANG stocks in Q1 2025, including:
+    1. Current market data and trends for each FAANG stock
+    2. ARIMA and LSTM model forecasting results with a comparative analysis
+    3. AI news sentiment analysis and its impact on stock performance
+    4. Final investment recommendation with a well-supported justification
+    5. Risk assessment and potential market challenges"""
 )
 
 # Create CrewAI workflow
 crew = Crew(
-    agents=[data_scientist, market_analyst, stock_forecaster, investment_consultant],  # Updated agent order
-    tasks=[task4, task1, task5, task2, task3],  # Updated task order
+    agents=[data_scientist, market_analyst, stock_forecaster, investment_consultant],
+    tasks=[task1, task2, task3, task5, task4],  # Updated task order
     verbose=True,
     process=Process.sequential
 )
