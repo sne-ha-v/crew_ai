@@ -164,7 +164,7 @@ async def main():
     # Fetch AI News (replace with your actual API key)
     print("\n📰 Fetching Latest AI News...")
     ai_news = await resource_integrator.fetch_ai_news(
-        api_key="e8ed8f77beff4a08b3be6ccef9bdcf13"  # REPLACE with actual API key
+        api_key="Apikey"  # REPLACE with actual API key
     )
     print(f"AI News Headlines: {ai_news['Headlines']}")
     

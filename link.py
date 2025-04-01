@@ -17,7 +17,7 @@ async def fetch_ai_news():
     url = "https://newsapi.org/v2/everything"
     params = {
         "q": "AI for mid-market companies",
-        "apiKey": "e8ed8f77beff4a08b3be6ccef9bdcf13",  # Get this from https://newsapi.org/
+        "apiKey": "your_api_key",  # Get this from https://newsapi.org/
         "pageSize": 5
     }
 

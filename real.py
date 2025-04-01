@@ -29,7 +29,7 @@ FAANG_COMPANIES = {
 # Function to fetch AI-related news and sentiment scores for each FAANG company
 async def fetch_faang_ai_news():
     url = "https://newsapi.org/v2/everything"
-    api_key = "e8ed8f77beff4a08b3be6ccef9bdcf13"
+    api_key = "your_api_key"
     
     results = {}
 
